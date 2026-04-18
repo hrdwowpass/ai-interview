@@ -89,7 +89,8 @@
         show('screen-loading');
 
         // 공식 문서 권장 v1 경로 및 gemini-1.5-flash 모델명
-        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+        // index.html 코드 중 이 줄을 찾아서 바꿔주세요.
+const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
 
         try {
             const resp = await fetch(url, {
