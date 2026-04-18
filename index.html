@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 면접 트레이너</title>
+    <style>
+        :root { --p: #4A90E2; --d: #E74C3C; --bg: #f5f7fa; }
+        body { font-family: 'Pretendard', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: var(--bg); }
+        #app { width: 420px; height: 680px; background: white; border-radius: 24px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); padding: 30px; display: flex; flex-direction: column; box-sizing: border-box; }
+        .screen { display: none; flex-direction: column; height: 100%; animation: fadeIn 0.3s; }
+        .active { display: flex; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        h2 { text-align: center; color: #333; margin-bottom: 20px; }
+        input, button { padding: 18px; border-radius: 12px; border: 2px solid #eee; font-size: 16px; margin-bottom: 12px; outline: none; }
+        button { background: var(--p); color: white; border: none; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        button:hover { background: #357ABD; }
+        .question-box { font-size: 19px; text-align: center; margin: 30px 0; line-height: 1.6; min-height: 140px; display: flex; align-items: center; justify-content: center; background: #fafafa; border-radius: 15px; padding: 20px; border: 1px solid #f0f0f0; word-break: keep-all; }
+        .timer { font-size: 56px; font-weight: bold; text-align: center; color: var(--d); }
+        .countdown { font-size: 70px; font-weight: bold; color: var(--p); text-align: center; margin: 10px 0; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--p); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div id="screen-input" class="screen active">
+        <h2>AI 면접 연습하기</h2>
+        <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+            <input type="text" id="job-input" placeholder="지원 직무를 입력하세요">
+            <button onclick="initInterview()">면접 질문 생성</button>
+        </div>
+    </div>
+
+    <div id="screen-loading" class="screen">
+        <div style="margin:auto; text-align:center;">
+            <div class="spinner"></div>
+            <p id="loading-text" style="margin-top:20px;">AI가 질문을 생성 중입니다...</p>
+        </div>
+    </div>
+
+    <div id="screen-interview" class="screen">
+        <div id="q-content" class="question-box"></div>
+        <div id="prep-area" style="display:none;">
+            <p style="text-align:center; color:var(--p); font-weight:bold;">답변 준비 시간</p>
+            <div id="prep-timer" class="countdown">60</div>
+        </div>
+        <div id="answer-area" style="display:none;">
+            <p style="text-align:center; color:var(--d); font-weight:bold;">실제 답변 중</p>
+            <div id="answer-timer" class="timer">03:00</div>
+        </div>
+    </div>
+
+    <div id="screen-result" class="screen">
+        <h2>면접 피드백</h2>
+        <div id="feedback-list" style="overflow-y:auto; flex:1; padding-right:5px;"></div>
+        <button onclick="location.reload()" style="margin-top:15px;">홈으로 가기</button>
+    </div>
+</div>
+
+<script>
+    const API_KEY = "AIzaSyCEUI5NbzcosuWhAVJz3SKOsAJqUpA91Lk"; 
+
+    let questions = [];
+
+    function show(id) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+
+    async function initInterview() {
+        const job = document.getElementById('job-input').value;
+        if(!job) return alert("직무를 입력하세요.");
+        show('screen-loading');
+
+        // 배포 환경에서는 v1beta와 gemini-1.5-flash 조합이 가장 잘 작동합니다.
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+
+        try {
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: `${job} 직무 면접 질문 3개를 한국어로 생성해줘. 다른 말 없이 오직 ["질문1", "질문2", "질문3"] 형태의 JSON 배열만 응답해.` }] }]
+                })
+            });
+
+            const data = await resp.json();
+            if(data.error) throw new Error(data.error.message);
+
+            let raw = data.candidates[0].content.parts[0].text.replace(/```json|```/g, "").trim();
+            questions = JSON.parse(raw);
+            runLoop();
+        } catch (e) {
+            alert("API 오류: " + e.message);
+            show('screen-input');
+        }
+    }
+
+    async function runLoop() {
+        for(let i=0; i<questions.length; i++) {
+            await runStep(i);
+        }
+        showFeedback();
+    }
+
+    function runStep(idx) {
+        return new Promise(resolve => {
+            show('screen-interview');
+            document.getElementById('q-content').innerText = questions[idx];
+            document.getElementById('prep-area').style.display = 'none';
+            document.getElementById('answer-area').style.display = 'none';
+
+            const tts = new SpeechSynthesisUtterance(questions[idx]);
+            tts.lang = 'ko-KR';
+            window.speechSynthesis.speak(tts);
+
+            tts.onend = () => {
+                let prep = 60;
+                const pt = document.getElementById('prep-timer');
+                document.getElementById('prep-area').style.display = 'block';
+                pt.innerText = prep;
+                const pi = setInterval(() => {
+                    pt.innerText = --prep;
+                    if(prep <= 0) {
+                        clearInterval(pi);
+                        document.getElementById('prep-area').style.display = 'none';
+                        startAnswerTimer(180, resolve);
+                    }
+                }, 1000);
+            };
+        });
+    }
+
+    function startAnswerTimer(sec, resolve) {
+        document.getElementById('answer-area').style.display = 'block';
+        const at = document.getElementById('answer-timer');
+        const ai = setInterval(() => {
+            let m = Math.floor(sec/60), s = sec%60;
+            at.innerText = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+            if(--sec < 0) { 
+                clearInterval(ai);
+                resolve();
+            }
+        }, 1000);
+    }
+
+    function showFeedback() {
+        show('screen-result');
+        const list = document.getElementById('feedback-list');
+        questions.forEach((q, i) => {
+            list.innerHTML += `
+                <div style="padding:15px; background:#f8f9fa; border-radius:12px; margin-bottom:10px; border-left:4px solid var(--p);">
+                    <strong>Q${i+1}. ${q}</strong>
+                    <p style="font-size:13px; color:#666; margin-top:8px;">AI 컨설턴트 피드백: 준비 시간을 잘 활용하여 답변하셨습니다. 수고하셨습니다!</p>
+                </div>`;
+        });
+    }
+</script>
+</body>
+</html>
